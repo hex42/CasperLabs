@@ -2,6 +2,7 @@ use super::alloc::vec::Vec;
 use super::bytesrepr::{Error, FromBytes, ToBytes, N32, U32_SIZE};
 use crate::contract_api::pointers::*;
 use core::cmp::Ordering;
+use core::ops::Add;
 
 #[allow(clippy::derive_hash_xor_eq)]
 #[repr(C)]
@@ -31,6 +32,39 @@ impl AccessRights {
 }
 
 use AccessRights::*;
+
+impl Add for AccessRights {
+    type Output = AccessRights;
+
+    fn add(self, other: AccessRights) -> AccessRights {
+        match (self, other) {
+            (Eqv, _) => other,
+            (_, Eqv) => self,
+            (Read, Read) => Read,
+            (Write, Write) => Write,
+            (Add, Add) => Add,
+            (ReadAdd, ReadAdd) => ReadAdd,
+            (ReadWrite, ReadWrite) => ReadWrite,
+            (AddWrite, AddWrite) => AddWrite,
+            (Read, Write) | (Write, Read) => ReadWrite,
+            (Read, Add) | (Add, Read) => ReadAdd,
+            (Write, Add) | (Add, Write) => AddWrite,
+            // Because ReadWrite >= Add
+            (ReadAdd, AddWrite) | (AddWrite, ReadAdd) => ReadWrite,
+            (ReadWrite, AddWrite) | (AddWrite, ReadWrite) => ReadWrite,
+            (Read, AddWrite) | (AddWrite, Read) => ReadWrite,
+            (Write, ReadAdd) | (ReadAdd, Write) => ReadWrite,
+            (Add, ReadWrite) | (ReadWrite, Add) => ReadWrite,
+            (ReadAdd, ReadWrite) | (ReadWrite, ReadAdd) => ReadWrite,
+            (Read, ReadAdd) | (ReadAdd, Read) => ReadAdd,
+            (Read, ReadWrite) | (ReadWrite, Read) => ReadWrite,
+            (Write, ReadWrite) | (ReadWrite, Write) => ReadWrite,
+            (Write, AddWrite) | (AddWrite, Write) => AddWrite,
+            (Add, ReadAdd) | (ReadAdd, Add) => ReadAdd,
+            (Add, AddWrite) | (AddWrite, Add) => AddWrite,
+        }
+    }
+}
 
 /// Partial order of the access rights.
 /// Since there are three distinct types of access rights to a resource
@@ -455,6 +489,25 @@ mod tests {
         fn test_key_partialeq_partialord_ord_property(key_a in key_arb(), key_b in key_arb()) {
             if key_a == key_b && Some(key_a.cmp(&key_b)) == key_a.partial_cmp(&key_b) {
                 assert!(key_a.cmp(&key_b) == Ordering::Equal);
+            }
+        }
+
+        #[test]
+        fn access_rights_addition_symmetric(rights_a in access_rights_arb(), rights_b in access_rights_arb()) {
+            assert_eq!(rights_a + rights_b, rights_b + rights_a);
+        }
+
+        #[test]
+        fn access_rights_addition_widen(rights_a in access_rights_arb(), rights_b in access_rights_arb()) {
+            let merged_rights = rights_a + rights_b;
+            match rights_a.partial_cmp(&rights_b) {
+                Some(Ordering::Greater) => assert!(rights_a == merged_rights),
+                Some(Ordering::Less) => assert!(rights_b == merged_rights),
+                Some(Ordering::Equal) => assert!(rights_a == merged_rights && rights_b == merged_rights),
+                None => {
+                    assert_eq!(merged_rights + rights_a, merged_rights, "merged_rights = {:?}", merged_rights);
+                    assert_eq!(merged_rights + rights_b, merged_rights, "merged_rights = {:?}", merged_rights);
+                }
             }
         }
     }
