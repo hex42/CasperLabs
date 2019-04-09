@@ -120,7 +120,11 @@ impl<'a> RuntimeContext<'a> {
 
     pub fn insert_uref(&mut self, key: Key) {
         if let Key::URef(raw_addr, rights) = key {
-            self.known_urefs.insert(raw_addr, rights);
+            let entry_rights = self
+                .known_urefs
+                .entry(raw_addr)
+                .or_insert(AccessRights::Eqv);
+            *entry_rights += rights;
         }
     }
 
@@ -1235,5 +1239,30 @@ mod tests {
         let res: (Result<u32, String>, u32) = indirect_fn(counter.fail(), counter.counter);
         assert!(res.0.is_err());
         assert_eq!(res.1, 11); // test that counter value was fetched lazily
+    }
+
+    use super::RuntimeContext;
+    use std::collections::BTreeMap;
+    use common::key::{Key, AccessRights};
+
+    #[test]
+    fn insert_uref_adds_rights() {
+        let account = common::value::Account::new([0u8; 32], 1u64, BTreeMap::new());
+        let base_key = Key::Account([0u8; 20]);
+        let mut uref_lookup = BTreeMap::new();
+        let mut rc = RuntimeContext::new(&mut uref_lookup, &account, base_key, 1u64);
+        let key_addr = [1u8; 32];
+        let read_rights = AccessRights::Read;
+        let add_rights = AccessRights::Add;
+        let merged = read_rights + add_rights;
+        let key_read_add = Key::URef(key_addr, read_rights);
+        let key_write = Key::URef(key_addr, add_rights);
+        let key_merged = Key::URef(key_addr, merged);
+
+        rc.insert_uref(key_read_add);
+        rc.insert_uref(key_write);
+
+        assert!(rc.validate_key(&key_merged).is_ok());
+        assert!(rc.validate_key(&Key::URef(key_addr, AccessRights::Write)).is_err());
     }
 }

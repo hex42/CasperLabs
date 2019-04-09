@@ -2,7 +2,7 @@ use super::alloc::vec::Vec;
 use super::bytesrepr::{Error, FromBytes, ToBytes, N32, U32_SIZE};
 use crate::contract_api::pointers::*;
 use core::cmp::Ordering;
-use core::ops::Add;
+use core::ops::{Add, AddAssign};
 
 #[allow(clippy::derive_hash_xor_eq)]
 #[repr(C)]
@@ -63,6 +63,12 @@ impl Add for AccessRights {
             (Add, ReadAdd) | (ReadAdd, Add) => ReadAdd,
             (Add, AddWrite) | (AddWrite, Add) => AddWrite,
         }
+    }
+}
+
+impl AddAssign for AccessRights {
+    fn add_assign(&mut self, other: AccessRights) {
+        *self = *self + other;
     }
 }
 
